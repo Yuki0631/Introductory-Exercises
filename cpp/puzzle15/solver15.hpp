@@ -47,7 +47,7 @@ A_star_path(const puzzle15::Puzzle& start,
         }
     };
 
-    if (start.tiles == goal.tiles) { // もし開始状態が目標状態なら
+    if (start.packed == goal.packed) { // もし開始状態が目標状態なら
         auto t1 = std::chrono::steady_clock::now();
         return SearchResult{
             std::make_optional(std::vector<Puzzle::Move>{}),
@@ -56,16 +56,17 @@ A_star_path(const puzzle15::Puzzle& start,
         };
     }
 
+    using Key = uint64_t;
+
     BucketPriorityQueue<Node> open(0, 82, 0, 80); // オープンリストのデータ構造 // max値の設定は最重要
-    std::unordered_set<Puzzle, puzzle15::PuzzleHash> closed; // クローズドリストのデータ構造
-    std::unordered_map<Puzzle, int, puzzle15::PuzzleHash> gscore; // g値のマップ
-    std::unordered_map<Puzzle, int, puzzle15::PuzzleHash> hscore; // h値のマップ
-    std::unordered_map<Puzzle, std::pair<Puzzle, Puzzle::Move>, puzzle15::PuzzleHash> parent; // <子状態, (親状態, 打った手)>
+    struct Meta { int g; int h; bool closed; };
+    std::unordered_map<Key, Meta> meta; // g,h,closed を集約
+    struct Parent { Key prev; puzzle15::Puzzle::Move move; };
+    std::unordered_map<Key, Parent> parent; // <子状態, (親状態, 打った手)>
 
     int hstart = h(start);
     open.push(Node{hstart, 0, hstart, start}, hstart, hstart);
-    gscore[start] = 0;
-    hscore[start] = hstart;
+    meta[start.packed] = {0, hstart, false};
 
     constexpr Puzzle::Move MOVES[4] = {
         Puzzle::Move::Up, Puzzle::Move::Down, Puzzle::Move::Left, Puzzle::Move::Right
@@ -75,18 +76,28 @@ A_star_path(const puzzle15::Puzzle& start,
         Node cur = open.top(); // オープンリストから最小のノードを取得
         open.pop(); // オープンリストからノードを削除
 
-        auto itg = gscore.find(cur.s);
-        if (itg != gscore.end() && cur.g > itg->second) continue;
+        auto itg = meta.find(cur.s.packed);
+        if (itg != meta.end() && cur.g > itg->second.g) continue;
 
         // ゴール条件を満たした場合
-        if (cur.s.tiles == goal.tiles) {
+        if (cur.s.packed == goal.packed) {
             std::vector<Puzzle::Move> path;
             Puzzle x = cur.s;
-            while (!(x.tiles == start.tiles)) {
-                auto itp = parent.find(x);
+            while (!(x.packed == start.packed)) {
+                auto itp = parent.find(x.packed);
                 if (itp == parent.end()) break; // ありえないが念のため
-                path.push_back(itp->second.second);
-                x = itp->second.first;
+                path.push_back(itp->second.move);
+
+                puzzle15::Puzzle prev;
+                prev.packed = itp->second.prev;
+
+                for (int i = 0; i < 16; ++i) {
+                    if (((prev.packed >> (i * 4)) & 0xF) == 0) {
+                        prev.zero_pos = static_cast<uint8_t>(i);
+                        break;
+                    }
+                }
+                x = prev;
             }
             std::reverse(path.begin(), path.end()); // スタートからゴールへの経路にする
             auto t1 = std::chrono::steady_clock::now();
@@ -99,7 +110,11 @@ A_star_path(const puzzle15::Puzzle& start,
 
         // クローズドリストへの追加
         // 遅延重複検出
-        if (!closed.insert(cur.s).second) continue; // falseならすでに訪問済みなのでスキップする
+        {
+            Meta &m = meta[cur.s.packed];
+            if (m.closed) continue; // すでにクローズドリストにあるならスキップ
+            m.closed = true; // クローズドリストに追加
+        }
 
         
 
@@ -110,20 +125,19 @@ A_star_path(const puzzle15::Puzzle& start,
             auto nxt_opt = cur.s.moved(m);
             if (!nxt_opt) continue; // 移動後の状態が無効の場合はスキップ
             int new_zero_pos = nxt_opt->zero_pos;
-            int t = nxt_opt->tiles[old_zero_pos];
+            int t = nxt_opt->get(old_zero_pos);
             Puzzle nxt = *nxt_opt;
 
             int tentative_g = cur.g + 1; // 暫定的な g 値
 
             // 即時重複検出
-            auto it = gscore.find(nxt); // gscore に存在するか確認
-            if (it != gscore.end() && tentative_g >= it->second) continue; // 既存の経路よりも悪い場合はスキップ
+            auto it = meta.find(nxt.packed);
+            if (it != meta.end() && tentative_g >= it->second.g) continue;
 
-            int h_value = puzzle15::manhattan_delta_for_move(hscore[cur.s], t, new_zero_pos, old_zero_pos);
+            int h_value = puzzle15::manhattan_delta_for_move(meta[cur.s.packed].h, t, new_zero_pos, old_zero_pos);
 
-            parent[nxt] = std::make_pair(cur.s, m); // 親と手を更新
-            gscore[nxt] = tentative_g; // g 値を更新
-            hscore[nxt] = h_value; // h 値を更新
+            parent[nxt.packed] = {cur.s.packed, m}; // 親と手を更新
+            meta[nxt.packed] = {tentative_g, h_value, false}; // メタ情報を更新
             int f_value = tentative_g + h_value;
             generated++; // 新たに生成したノード数をカウント
             open.push(Node{f_value, tentative_g, h_value, nxt}, f_value, h_value);
