@@ -13,6 +13,16 @@
 #include "bucket_pq.hpp"
 
 namespace solver15 {
+    static inline puzzle15::Puzzle::Move inverse_move(puzzle15::Puzzle::Move m) noexcept {
+    using M = puzzle15::Puzzle::Move;
+    switch (m) {
+        case M::Up:    return M::Down;
+        case M::Down:  return M::Up;
+        case M::Left:  return M::Right;
+        case M::Right: return M::Left;
+    }
+    return M::Up; // 到達不能
+}
 
 struct SearchResult { // 探索結果用の構造体
     std::optional<std::vector<puzzle15::Puzzle::Move>> path;
@@ -149,6 +159,95 @@ A_star_path(const puzzle15::Puzzle& start,
         generated,
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count()
     };
+}
+
+inline SearchResult
+IDA_star_path(const puzzle15::Puzzle& start,
+              const puzzle15::Puzzle& goal) {
+    using puzzle15::Puzzle;
+
+    SearchResult out;
+    auto t0 = std::chrono::steady_clock::now();
+
+    // 与えられたスタート状態がゴール状態なら
+    if (start.packed == goal.packed) {
+        out.path = std::vector<Puzzle::Move>{}; // 空経路
+        out.generated = 1;
+        auto t1 = std::chrono::steady_clock::now();
+        out.elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
+        return out;
+    }
+
+    // IDA* 用ワーキング領域
+    std::vector<Puzzle::Move> path; // 探索経路
+    path.reserve(81); // 80+1個の手を予約
+    std::unordered_set<uint64_t> onpath; // ループ防止用、最大の深さは 80 なので 81 で十分
+    onpath.reserve(81); // 80+1個の深さを予約
+
+    const auto h0 = puzzle15::manhattan_heuristic_fast(start);
+    int bound = h0; // 初期の閾値
+
+    // 再帰DFS: 見つかったら負値（-1）を返す。見つからなければ次の閾値候補（最小の f 超過値）
+    // ここのコードの部分は、IDA*の再帰探索を実装している。
+    std::function<int(const Puzzle&, int, int, std::optional<Puzzle::Move>)> dfs =
+        [&](const Puzzle& s, int g, int bound, std::optional<Puzzle::Move> prev_move) -> int
+    {
+        const int h = puzzle15::manhattan_heuristic_fast(s);
+        const int f = g + h;
+        if (f > bound) return f;                    // 閾値超過 → 次のbound候補
+        if (s.packed == goal.packed) return -1;     // 発見
+
+        // 展開（子の f 超過の最小値を覚える）
+        int min_next = std::numeric_limits<int>::max();
+
+        // 直前手の逆手はスキップして枝刈り
+        auto neigh = s.neighbors();
+        out.generated += neigh.size(); // 生成ノード数カウント（「子を列挙した数」で近似）
+
+        for (auto& [t, mv] : neigh) {
+            if (prev_move.has_value() && mv == inverse_move(*prev_move)) {
+                continue; // 即時バックトラック防止
+            }
+            // 経路上再訪の禁止（IDA*なのでクローズ表は持たない）
+            if (onpath.find(t.packed) != onpath.end()) continue;
+
+            onpath.insert(t.packed);
+            path.push_back(mv);
+
+            int r = dfs(t, g + 1, bound, mv);
+
+            if (r == -1) { // found
+                return -1;
+            }
+            if (r < min_next) min_next = r;
+
+            path.pop_back();
+            onpath.erase(t.packed);
+        }
+        return min_next;
+    };
+
+    onpath.insert(start.packed);
+
+    // 実際のIDA*探索
+    while (true) {
+        int r = dfs(start, 0, bound, std::nullopt);
+        if (r == -1) {
+            // 成功: 現在の path が解
+            out.path = path;
+            auto t1 = std::chrono::steady_clock::now();
+            out.elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
+            return out;
+        }
+        if (r == std::numeric_limits<int>::max()) {
+            // 解なし（理論上ありえないが安全上の理由から実装）
+            out.path = std::nullopt;
+            auto t1 = std::chrono::steady_clock::now();
+            out.elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
+            return out;
+        }
+        bound = r; // 次のしきい値で再試行（最小の f 超過値）
+    }
 }
 
 inline std::string move_to_string(puzzle15::Puzzle::Move m) {
