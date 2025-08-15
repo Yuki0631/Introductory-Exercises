@@ -184,15 +184,14 @@ IDA_star_path(const puzzle15::Puzzle& start,
     std::unordered_set<uint64_t> onpath; // ループ防止用、最大の深さは 80 なので 81 で十分
     onpath.reserve(81); // 80+1個の深さを予約
 
-    const auto h0 = puzzle15::manhattan_heuristic_fast(start);
+    const int h0 = puzzle15::manhattan_heuristic_fast(start);
     int bound = h0; // 初期の閾値
 
     // 再帰DFS: 見つかったら負値（-1）を返す。見つからなければ次の閾値候補（最小の f 超過値）
     // ここのコードの部分は、IDA*の再帰探索を実装している。
-    std::function<int(const Puzzle&, int, int, std::optional<Puzzle::Move>)> dfs =
-        [&](const Puzzle& s, int g, int bound, std::optional<Puzzle::Move> prev_move) -> int
+    std::function<int(const Puzzle&, int, int, int, std::optional<Puzzle::Move>)> dfs =
+        [&](const Puzzle& s, int g, int bound, int h, std::optional<Puzzle::Move> prev_move) -> int
     {
-        const int h = puzzle15::manhattan_heuristic_fast(s);
         const int f = g + h;
         if (f > bound) return f;                    // 閾値超過 → 次のbound候補
         if (s.packed == goal.packed) return -1;     // 発見
@@ -211,10 +210,23 @@ IDA_star_path(const puzzle15::Puzzle& start,
             // 経路上再訪の禁止（IDA*なのでクローズ表は持たない）
             if (onpath.find(t.packed) != onpath.end()) continue;
 
+            // マンハッタンヒューリスティックの差分更新
+            const int old_zero = s.zero_pos;
+            const int new_zero = t.zero_pos;
+            const uint8_t moved_tile = t.get(old_zero);
+
+            const int h_child = puzzle15::manhattan_delta_for_move(h, moved_tile, new_zero, old_zero);
+            const int f_child = (g + 1) + h_child;
+
+            if (f_child > bound) {
+                if (f_child < min_next) min_next = f_child; // 最小の f 超過値を更新
+                continue; // 次の子ノードへ
+            }
+
             onpath.insert(t.packed);
             path.push_back(mv);
 
-            int r = dfs(t, g + 1, bound, mv);
+            int r = dfs(t, g + 1, bound, h_child, mv);
 
             if (r == -1) { // found
                 return -1;
@@ -230,25 +242,28 @@ IDA_star_path(const puzzle15::Puzzle& start,
     onpath.insert(start.packed);
 
     // 実際のIDA*探索
-    while (true) {
-        int r = dfs(start, 0, bound, std::nullopt);
+    for (;;) {
+        onpath.clear(); // ループ防止用セットをクリア
+        path.clear(); // 探索経路をクリア
+        onpath.insert(start.packed); // スタート状態をセットに追加
+
+        int r = dfs(start, 0, bound, h0, std::nullopt);
         if (r == -1) {
-            // 成功: 現在の path が解
-            out.path = path;
+            out.path = path; // 見つかった経路
             auto t1 = std::chrono::steady_clock::now();
             out.elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
             return out;
         }
-        if (r == std::numeric_limits<int>::max()) {
-            // 解なし（理論上ありえないが安全上の理由から実装）
+        if (r == std::numeric_limits<int>::max()) { // すべての子が閾値超過なら終了
             out.path = std::nullopt;
             auto t1 = std::chrono::steady_clock::now();
             out.elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
             return out;
         }
-        bound = r; // 次のしきい値で再試行（最小の f 超過値）
+        bound = r;
     }
 }
+    
 
 inline std::string move_to_string(puzzle15::Puzzle::Move m) {
     switch (m) {
