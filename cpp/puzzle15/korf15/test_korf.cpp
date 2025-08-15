@@ -20,7 +20,7 @@ int main() {
 
     auto goal = puzzle15::Puzzle::goal(); // 目標状態
 
-    auto problems = korf15::load_korf_problems("15-puzzle-states.txt");
+    auto problems = korf15::load_korf_problems("15-puzzle-states-debug.txt");
 
     // デバッグ用に最初の1個の盤面を表示
     std::cout << "Initial problem (1):\n";
@@ -30,7 +30,7 @@ int main() {
     }
 
     for (int i = 0; i < problems.size(); ++i) {
-        auto result = solver15::A_star_path(problems[i], goal);
+        auto result = solver15::IDA_star_path(problems[i], goal);
         if (result.path) {
             generated_total += result.generated;
             elapsed_total += result.elapsed_ms;

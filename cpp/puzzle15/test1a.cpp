@@ -10,12 +10,14 @@ int main() {
     std::mt19937 rng(std::random_device{}()); // 乱数生成器
     puzzle15::init_manhattan_table(); // マンハッタン距離のテーブルを初期化
 
+    int num_problems = 1;
+
     // 問題の生成
     std::vector<puzzle15::Puzzle> puzzle_list = std::vector<puzzle15::Puzzle>(); // 100個の問題
-    puzzle_list.reserve(100);
+    puzzle_list.reserve(num_problems);
 
-    for (int i = 0; i < 100; ++i) {
-        int steps = std::uniform_int_distribution<int>(10, 40)(rng); // 10から60のランダムな手数
+    for (int i = 0; i < num_problems; ++i) {
+        int steps = std::uniform_int_distribution<int>(70, 71)(rng); 
         puzzle15::Puzzle p = puzzle15::generate_random_puzzle(steps, std::nullopt);
         puzzle_list.push_back(p);
     }
@@ -32,7 +34,7 @@ int main() {
     std::vector<long long> elapsed_list;
 
     for (int i = 0; i < puzzle_list.size(); ++i) {
-        auto result = solver15::A_star_path(puzzle_list[i], goal);
+        auto result = solver15::IDA_star_path(puzzle_list[i], goal);
         if (result.path) {
             generated_total += result.generated;
             elapsed_total += result.elapsed_ms;
@@ -61,7 +63,7 @@ int main() {
         }
     }
 
-    std::cout << "A* Search Results (100 problems):\n";
+    std::cout << "A* Search Results ( " << num_problems << " problems):\n";
     std::cout << "Average generated nodes: " << (generated_total / success_count) << "\n";
     std::cout << "Average elapsed time: " << (elapsed_total / success_count) << " ms\n";
     std::cout << "Average path length: " << (path_length_total / success_count) << "\n";
@@ -76,7 +78,7 @@ int main() {
     std::cout << "\n";
 
     // IDA* の結果を表示
-    std::cout << "IDA* Search Results (100 problems):\n";
+    std::cout << "IDA* Search Results ( " << num_problems << " problems):\n";
     std::cout << "Average generated nodes: " << (generated_total_ida / success_count_ida) << "\n";
     std::cout << "Average elapsed time: " << (elapsed_total_ida / success_count_ida) << " ms\n";
     std::cout << "Average path length: " << (path_length_total_ida / success_count_ida) << "\n";
