@@ -182,6 +182,8 @@ IDA_star_path(const puzzle15::Puzzle& start,
     std::array<Puzzle::Move, 81> path; // 探索経路
     std::array<uint64_t, 81> onpath; // ループ防止用、最大の深さは 80 なので 81 で十分
     int depth = 0;
+    std::unordered_set<uint64_t> onpath_set; // ループ防止用セット
+    onpath_set.reserve(81); // 81個の状態を保存するためのセット
 
     const int h0 = puzzle15::manhattan_heuristic_fast(start);
     int bound = h0; // 初期の閾値
@@ -195,8 +197,10 @@ IDA_star_path(const puzzle15::Puzzle& start,
         std::array<uint64_t, 81>& onpath;
         std::array<Puzzle::Move, 81>& path;
         int& depth;
+        std::unordered_set<uint64_t>& onpath_set;
 
-        int operator()(const Puzzle& s, int g, int bound, int h, std::optional<Puzzle::Move> prev_move) {
+
+        int operator()(Puzzle& s, int g, int bound, int h, std::optional<Puzzle::Move> prev_move) { // s を書き換えて探索する
             const int f = g + h;
             if (f > bound) return f;                    // 閾値超過 → 次のbound候補
             if (s.packed == goal.packed) return -1;     // 発見
@@ -204,55 +208,54 @@ IDA_star_path(const puzzle15::Puzzle& start,
             // 展開（子の f 超過の最小値を覚える）
             int min_next = std::numeric_limits<int>::max();
 
-            // 直前手の逆手はスキップして枝刈り
-            std::array<std::pair<Puzzle, Puzzle::Move>, 4> buf;
-            int n = s.neighbors_into(buf);
-            out.generated += n; // 生成ノード数カウント（「子を列挙した数」で近似）
+            static constexpr Puzzle::Move MOVES[4] = {
+                Puzzle::Move::Up, Puzzle::Move::Down, Puzzle::Move::Left, Puzzle::Move::Right
+            };
 
-            for (int i = 0; i < n; ++i) {
-                const auto& t = buf[i].first;
-                const auto mv = buf[i].second;
-
+            for (Puzzle::Move mv : MOVES) {
                 if (prev_move.has_value() && mv == inverse_move(*prev_move)) {
                     continue; // 即時バックトラック防止
                 }
-                // 経路上再訪の禁止（IDA*なのでクローズ表は持たない）
-                bool seen = false;
-                for (int k = 0; k < depth; ++k) {
-                    if (onpath[k] == t.packed) {
-                        seen = true;
-                        break;
-                    }
+
+                uint8_t moved_tile = 0, old_zero = 0;
+                if (!s.apply_move_inplace(mv, moved_tile, old_zero)) {
+                    continue; // 移動できない場合はスキップ
                 }
-                if (seen) continue;
 
-            // マンハッタンヒューリスティックの差分更新
-            const int old_zero = s.zero_pos;
-            const int new_zero = t.zero_pos;
-            const uint8_t moved_tile = t.get(old_zero);
+                if (onpath_set.count(s.packed)) { // ループ検出
+                    s.undo_move_inplace(moved_tile, old_zero);
+                    continue;
+                }
 
-            const int h_child = puzzle15::manhattan_delta_for_move(h, moved_tile, new_zero, old_zero);
-            const int f_child = (g + 1) + h_child;
+                const int new_zero = s.zero_pos;
+                const int h_child = puzzle15::manhattan_delta_for_move(h, moved_tile, new_zero, old_zero);
+                const int f_child = (g + 1) + h_child;
 
-            if (f_child > bound) {
-                if (f_child < min_next) min_next = f_child; // 最小の f 超過値を更新
-                continue; // 次の子ノードへ
+                ++out.generated; // 生成ノード数をカウント
+
+                if (f_child > bound) {
+                    if (f_child < min_next) {
+                        min_next = f_child; // 最小の f 超過値を更新
+                    }
+                    s.undo_move_inplace(moved_tile, old_zero); // 元に戻す
+                    continue;
+                }
+
+                path[depth] = mv;
+                onpath[depth] = s.packed; // 現在の状態を保存
+                onpath_set.insert(s.packed); // ループ防止用セットに追加
+                ++depth;
+
+                int r = (*this)(s, g + 1, bound, h_child, mv);
+                if (r == -1) return -1;
+                if (r < min_next) min_next = r;
+
+                --depth; // 深さを戻す
+                onpath_set.erase(s.packed); // ループ防止用セットから削除
+                s.undo_move_inplace(moved_tile, old_zero); // 元に戻す
             }
 
-            path[depth] = mv; // 現在の手を記録
-            onpath[depth] = t.packed; // 現在の状態を記録
-            ++depth; // 深さを増やす
-
-            int r = (*this)(t, g + 1, bound, h_child, mv);
-
-            if (r == -1) { // found
-                return -1;
-            }
-            if (r < min_next) min_next = r;
-
-            --depth; // 深さを戻す
-        }
-        return min_next;
+            return (min_next == std::numeric_limits<int>::max()) ? std::numeric_limits<int>::max() : min_next;
     }
 };
 
@@ -262,9 +265,13 @@ IDA_star_path(const puzzle15::Puzzle& start,
     for (;;) {
         depth = 0;
         onpath[0] = start.packed;
-        Dfs dfs{goal, out, onpath, path, depth};
+        onpath_set.clear();
+        onpath_set.insert(start.packed); // スタート状態をセットに追加
 
-        int r = dfs(start, 0, bound, h0, std::nullopt);
+        Dfs dfs{goal, out, onpath, path, depth, onpath_set};
+
+        Puzzle cur = start; // 現在の状態を保持
+        int r = dfs(cur, 0, bound, h0, std::nullopt);
         if (r == -1) {
             out.path = std::vector<Puzzle::Move>(path.begin(), path.begin() + depth);
             auto t1 = std::chrono::steady_clock::now();

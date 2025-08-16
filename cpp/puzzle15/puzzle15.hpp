@@ -146,6 +146,35 @@ struct Puzzle {
     return M::Up;
     }
 
+    inline bool apply_move_inplace(Move m, uint8_t& moved_tile, uint8_t& old_zero) noexcept {
+        const int zr = row(zero_pos), zc = col(zero_pos);
+        int dr = 0, dc = 0;
+        switch (m) {
+            case Move::Up:    dr = -1; dc = 0; break;
+            case Move::Down:  dr =  1; dc = 0; break;
+            case Move::Left:  dr = 0; dc = -1; break;
+            case Move::Right: dr = 0; dc =  1; break;
+        }
+        const int tr = zr + dr, tc = zc + dc;
+        if (tr < 0 || tr > 3 || tc < 0 || tc > 3) return false; // 移動できない場合
+        const int to = tr * 4 + tc; // 移動先のインデックス
+
+        old_zero = zero_pos; // 元のゼロ位置を保存
+        moved_tile = nibble(packed, to); // 移動するタイルの値を保存
+
+        set_nibble(packed, to, 0);
+        set_nibble(packed, old_zero, moved_tile);
+        zero_pos = static_cast<uint8_t>(to);
+        return true;
+    }
+
+    inline void undo_move_inplace(uint8_t moved_tile, uint8_t old_zero) noexcept {
+        const int to = zero_pos; // 現在のゼロ位置
+        set_nibble(packed, old_zero, 0); // 元のゼロ位置にタイルをセット
+        set_nibble(packed, to, moved_tile); // 現在のゼロ位置にタイルを戻す
+        zero_pos = old_zero; // ゼロ位置を更新
+    }
+
 };
 
 } // namespace puzzle15

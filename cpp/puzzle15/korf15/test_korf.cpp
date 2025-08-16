@@ -7,9 +7,11 @@
 #include "../puzzle15.hpp"
 #include "korf15.hpp"
 #include "../solver15.hpp"
+#include "../generator15.hpp"
 
 int main() {
     puzzle15::init_manhattan_table(); // マンハッタン距離のテーブルを初期化
+    std::mt19937 rng(std::random_device{}()); // 乱数生成器
 
     // 100個の盤面を生成してA* Searchを実行
     std::size_t generated_total = 0; // すべてのテストの生成ノード数の合計
@@ -21,10 +23,14 @@ int main() {
 
     auto problems = korf15::load_korf_problems("15-puzzle-states.txt");
 
-    int num = 11;
+    puzzle15::Puzzle p = puzzle15::generate_random_puzzle(100, std::nullopt);
+    problems.push_back(p);
+
+    int num = 101;
+    num -= 1;
 
     // 解く問題を表示
-    std::cout << "Problem " << num << ":\n";
+    std::cout << "Problem " << num + 1 << ":\n";
     for (int i = 0; i < 16; ++i) {
         std::cout << static_cast<int>(problems[num].get(i)) << " ";
         if ((i + 1) % 4 == 0) std::cout << "\n";
