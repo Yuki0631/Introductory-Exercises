@@ -19,9 +19,9 @@ int main() {
 
     auto goal = puzzle15::Puzzle::goal(); // 目標状態
 
-    auto problems = korf15::load_korf_problems("15-puzzle-states-debug.txt");
+    auto problems = korf15::load_korf_problems("15-puzzle-states.txt");
 
-    int num = 2;
+    int num = 11;
 
     // 解く問題を表示
     std::cout << "Problem " << num << ":\n";

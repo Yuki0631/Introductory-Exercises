@@ -186,6 +186,8 @@ IDA_star_path(const puzzle15::Puzzle& start,
     const int h0 = puzzle15::manhattan_heuristic_fast(start);
     int bound = h0; // 初期の閾値
 
+    std::cout << "Initial bound: " << bound << "\n";
+
     // 再帰DFS: 見つかったら負値（-1）を返す。見つからなければ次の閾値候補（最小の f 超過値）
     struct Dfs {
         const Puzzle& goal;

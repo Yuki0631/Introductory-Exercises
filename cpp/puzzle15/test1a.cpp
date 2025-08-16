@@ -13,7 +13,7 @@ int main() {
     int num_problems = 1;
 
     // 問題の生成
-    std::vector<puzzle15::Puzzle> puzzle_list = std::vector<puzzle15::Puzzle>(); // 100個の問題
+    std::vector<puzzle15::Puzzle> puzzle_list = std::vector<puzzle15::Puzzle>(); // n個の問題
     puzzle_list.reserve(num_problems);
 
     for (int i = 0; i < num_problems; ++i) {
@@ -24,26 +24,42 @@ int main() {
 
     auto goal = puzzle15::Puzzle::goal(); // 目標状態
 
-    // 100個の盤面を生成してA* Searchを実行
+    bool a_star_off = true; // A* Searchをオフにする
 
-    std::size_t generated_total = 0;
-    long long elapsed_total = 0;
-    std::size_t path_length_total = 0;
-    int success_count = 0;
+    // n個の盤面を生成してA* Searchを実行
+    if (!a_star_off) {
+        std::size_t generated_total = 0;
+        long long elapsed_total = 0;
+        std::size_t path_length_total = 0;
+        int success_count = 0;
 
-    std::vector<long long> elapsed_list;
+        std::vector<long long> elapsed_list;
 
-    for (int i = 0; i < puzzle_list.size(); ++i) {
-        auto result = solver15::IDA_star_path(puzzle_list[i], goal);
-        if (result.path) {
-            generated_total += result.generated;
-            elapsed_total += result.elapsed_ms;
-            path_length_total += result.path->size();
-            elapsed_list.push_back(result.elapsed_ms);
-            success_count++;
+        for (int i = 0; i < puzzle_list.size(); ++i) {
+            auto result = solver15::IDA_star_path(puzzle_list[i], goal);
+            if (result.path) {
+                generated_total += result.generated;
+                elapsed_total += result.elapsed_ms;
+                path_length_total += result.path->size();
+                elapsed_list.push_back(result.elapsed_ms);
+                success_count++;
+            }
         }
-    }
 
+        std::cout << "A* Search Results ( " << num_problems << " problems):\n";
+        std::cout << "Average generated nodes: " << (generated_total / success_count) << "\n";
+        std::cout << "Average elapsed time: " << (elapsed_total / success_count) << " ms\n";
+        std::cout << "Average path length: " << (path_length_total / success_count) << "\n";
+
+        std::sort(elapsed_list.begin(), elapsed_list.end());
+        long long median = elapsed_list[success_count / 2];
+        std::cout << "Median elapsed time: " << median << " ms\n";
+
+        double gen_nodes_per_sec = static_cast<double>(generated_total) / (elapsed_total / 1000.0);
+        std::cout << "Generated nodes per second: " << gen_nodes_per_sec << "\n";
+
+        std::cout << "\n";
+    }
     // 同様に IDA* を実行
     int generated_total_ida = 0;
     int elapsed_total_ida = 0;
@@ -63,19 +79,6 @@ int main() {
         }
     }
 
-    std::cout << "A* Search Results ( " << num_problems << " problems):\n";
-    std::cout << "Average generated nodes: " << (generated_total / success_count) << "\n";
-    std::cout << "Average elapsed time: " << (elapsed_total / success_count) << " ms\n";
-    std::cout << "Average path length: " << (path_length_total / success_count) << "\n";
-
-    std::sort(elapsed_list.begin(), elapsed_list.end());
-    long long median = elapsed_list[success_count / 2];
-    std::cout << "Median elapsed time: " << median << " ms\n";
-
-    double gen_nodes_per_sec = static_cast<double>(generated_total) / (elapsed_total / 1000.0);
-    std::cout << "Generated nodes per second: " << gen_nodes_per_sec << "\n";
-
-    std::cout << "\n";
 
     // IDA* の結果を表示
     std::cout << "IDA* Search Results ( " << num_problems << " problems):\n";
