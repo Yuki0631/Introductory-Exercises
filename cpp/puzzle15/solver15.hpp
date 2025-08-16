@@ -179,36 +179,50 @@ IDA_star_path(const puzzle15::Puzzle& start,
     }
 
     // IDA* 用ワーキング領域
-    std::vector<Puzzle::Move> path; // 探索経路
-    path.reserve(81); // 80+1個の手を予約
-    std::unordered_set<uint64_t> onpath; // ループ防止用、最大の深さは 80 なので 81 で十分
-    onpath.reserve(81); // 80+1個の深さを予約
+    std::array<Puzzle::Move, 81> path; // 探索経路
+    std::array<uint64_t, 81> onpath; // ループ防止用、最大の深さは 80 なので 81 で十分
+    int depth = 0;
 
     const int h0 = puzzle15::manhattan_heuristic_fast(start);
     int bound = h0; // 初期の閾値
 
     // 再帰DFS: 見つかったら負値（-1）を返す。見つからなければ次の閾値候補（最小の f 超過値）
-    // ここのコードの部分は、IDA*の再帰探索を実装している。
-    std::function<int(const Puzzle&, int, int, int, std::optional<Puzzle::Move>)> dfs =
-        [&](const Puzzle& s, int g, int bound, int h, std::optional<Puzzle::Move> prev_move) -> int
-    {
-        const int f = g + h;
-        if (f > bound) return f;                    // 閾値超過 → 次のbound候補
-        if (s.packed == goal.packed) return -1;     // 発見
+    struct Dfs {
+        const Puzzle& goal;
+        SearchResult& out;
+        std::array<uint64_t, 81>& onpath;
+        std::array<Puzzle::Move, 81>& path;
+        int& depth;
 
-        // 展開（子の f 超過の最小値を覚える）
-        int min_next = std::numeric_limits<int>::max();
+        int operator()(const Puzzle& s, int g, int bound, int h, std::optional<Puzzle::Move> prev_move) {
+            const int f = g + h;
+            if (f > bound) return f;                    // 閾値超過 → 次のbound候補
+            if (s.packed == goal.packed) return -1;     // 発見
 
-        // 直前手の逆手はスキップして枝刈り
-        auto neigh = s.neighbors();
-        out.generated += neigh.size(); // 生成ノード数カウント（「子を列挙した数」で近似）
+            // 展開（子の f 超過の最小値を覚える）
+            int min_next = std::numeric_limits<int>::max();
 
-        for (auto& [t, mv] : neigh) {
-            if (prev_move.has_value() && mv == inverse_move(*prev_move)) {
-                continue; // 即時バックトラック防止
-            }
-            // 経路上再訪の禁止（IDA*なのでクローズ表は持たない）
-            if (onpath.find(t.packed) != onpath.end()) continue;
+            // 直前手の逆手はスキップして枝刈り
+            std::array<std::pair<Puzzle, Puzzle::Move>, 4> buf;
+            int n = s.neighbors_into(buf);
+            out.generated += n; // 生成ノード数カウント（「子を列挙した数」で近似）
+
+            for (int i = 0; i < n; ++i) {
+                const auto& t = buf[i].first;
+                const auto mv = buf[i].second;
+
+                if (prev_move.has_value() && mv == inverse_move(*prev_move)) {
+                    continue; // 即時バックトラック防止
+                }
+                // 経路上再訪の禁止（IDA*なのでクローズ表は持たない）
+                bool seen = false;
+                for (int k = 0; k < depth; ++k) {
+                    if (onpath[k] == t.packed) {
+                        seen = true;
+                        break;
+                    }
+                }
+                if (seen) continue;
 
             // マンハッタンヒューリスティックの差分更新
             const int old_zero = s.zero_pos;
@@ -223,33 +237,34 @@ IDA_star_path(const puzzle15::Puzzle& start,
                 continue; // 次の子ノードへ
             }
 
-            onpath.insert(t.packed);
-            path.push_back(mv);
+            path[depth] = mv; // 現在の手を記録
+            onpath[depth] = t.packed; // 現在の状態を記録
+            ++depth; // 深さを増やす
 
-            int r = dfs(t, g + 1, bound, h_child, mv);
+            int r = (*this)(t, g + 1, bound, h_child, mv);
 
             if (r == -1) { // found
                 return -1;
             }
             if (r < min_next) min_next = r;
 
-            path.pop_back();
-            onpath.erase(t.packed);
+            --depth; // 深さを戻す
         }
         return min_next;
-    };
+    }
+};
 
-    onpath.insert(start.packed);
+
 
     // 実際のIDA*探索
     for (;;) {
-        onpath.clear(); // ループ防止用セットをクリア
-        path.clear(); // 探索経路をクリア
-        onpath.insert(start.packed); // スタート状態をセットに追加
+        depth = 0;
+        onpath[0] = start.packed;
+        Dfs dfs{goal, out, onpath, path, depth};
 
         int r = dfs(start, 0, bound, h0, std::nullopt);
         if (r == -1) {
-            out.path = path; // 見つかった経路
+            out.path = std::vector<Puzzle::Move>(path.begin(), path.begin() + depth);
             auto t1 = std::chrono::steady_clock::now();
             out.elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
             return out;

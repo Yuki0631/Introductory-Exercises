@@ -103,6 +103,36 @@ struct Puzzle {
     return out;
     }
 
+    // 固定長buffer版の neighbors 関数
+    inline int neighbors_into(std::array<std::pair<Puzzle, Puzzle::Move>, 4>& buf) const noexcept {
+        using M = Puzzle::Move;
+        int n = 0;
+
+        const int zr = zero_pos / 4;
+        const int zc = zero_pos % 4;
+
+        auto push = [&](M m, int dr, int dc) { // 外部変数をキャプチャする (コピーを避ける)
+            const int tr = zr + dr, tc = zc + dc;
+            const int to = tr * 4 + tc;
+
+            Puzzle q = *this;
+
+            const uint8_t t = this->get(to); // 元盤面から取得
+            set_nibble(q.packed, to, 0);
+            set_nibble(q.packed, zero_pos, t);
+            q.zero_pos = static_cast<uint8_t>(to);
+
+            buf[n++] = {std::move(q), m};
+        };
+
+        if (zr > 0) push(M::Up,    -1,  0);
+        if (zr < 3) push(M::Down,   1,  0);
+        if (zc > 0) push(M::Left,   0, -1);
+        if (zc < 3) push(M::Right,  0,  1);
+
+        return n;
+    }
+
     // 方向の反転
     inline Puzzle::Move inverse(Puzzle::Move m) noexcept {
     using M = Puzzle::Move;
