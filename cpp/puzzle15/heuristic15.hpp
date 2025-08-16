@@ -17,8 +17,8 @@ inline int MDIST[16][16];
 
 inline void init_manhattan_table() {
     for (int tile = 1; tile < 16; ++tile) {
-        int tr = (tile - 1) / 4; // タイルの目標行
-        int tc = (tile - 1) % 4; // タイルの目標列
+        int tr = tile / 4; // タイルの目標行
+        int tc = tile % 4; // タイルの目標列
         for (int pos = 0; pos < 16; ++pos) {
             int r = pos / 4; // 現在の行
             int c = pos % 4; // 現在の列

@@ -3,13 +3,14 @@
 #include <vector>
 #include <algorithm>
 #include <thread>
+#include <cstdlib>
 #include <chrono>
 #include "../puzzle15.hpp"
 #include "korf15.hpp"
 #include "../solver15.hpp"
 #include "../generator15.hpp"
 
-int main() {
+int main(int argc, char* argv[]) {
     puzzle15::init_manhattan_table(); // マンハッタン距離のテーブルを初期化
     std::mt19937 rng(std::random_device{}()); // 乱数生成器
 
@@ -19,20 +20,33 @@ int main() {
     std::size_t path_length_total = 0; // すべてのテストの経路長の合計
     int successful_tests = 0; // 成功したテストの数
 
-    auto goal = puzzle15::Puzzle::goal(); // 目標状態
 
     auto problems = korf15::load_korf_problems("15-puzzle-states.txt");
 
-    puzzle15::Puzzle p = puzzle15::generate_random_puzzle(100, std::nullopt);
-    problems.push_back(p);
+    auto goal = problems[100];
 
-    int num = 101;
-    num -= 1;
+    int num = 0;
+    if (argc >= 2) {
+        num = std::atoi(argv[1]) - 1; // argv[1]をintに変換（1-based指定 → 0-basedに変換）
+    }
+
+    if (num < 0 || num >= static_cast<int>(problems.size())) {
+        std::cerr << "Invalid problem number. Please specify between 1 and " 
+                  << problems.size() << ".\n";
+        return 1;
+    }
 
     // 解く問題を表示
     std::cout << "Problem " << num + 1 << ":\n";
     for (int i = 0; i < 16; ++i) {
         std::cout << static_cast<int>(problems[num].get(i)) << " ";
+        if ((i + 1) % 4 == 0) std::cout << "\n";
+    }
+
+    // ゴール状態を表示
+    std::cout << "Goal state:\n";
+    for (int i = 0; i < 16; ++i) {
+        std::cout << static_cast<int>(goal.get(i)) << " ";
         if ((i + 1) % 4 == 0) std::cout << "\n";
     }
 
