@@ -81,8 +81,8 @@ A_star_path(const puzzle15::Puzzle& start,
     std::unordered_map<Key, Meta> meta; // g,h,closed を集約
     std::unordered_map<Key, Parent> parent; // <子状態, (親状態, 打った手)>
 
-    meta.reserve(1 << 25);
-    parent.reserve(1 << 25);
+    meta.reserve(1 << 24);
+    parent.reserve(1 << 24);
 
 
     int hstart = h(start);
@@ -93,11 +93,12 @@ A_star_path(const puzzle15::Puzzle& start,
         Puzzle::Move::Up, Puzzle::Move::Down, Puzzle::Move::Left, Puzzle::Move::Right
     };
 
+    std::optional<Puzzle::Move> prev_move = std::nullopt;
+
     while (!open.empty()) {
         Node cur = open.top(); // オープンリストから最小のノードを取得
         open.pop(); // オープンリストからノードを削除
 
-        std::optional<Puzzle::Move> prev_move = std::nullopt;
         
         auto itp = parent.find(cur.s.packed);
         if (itp != parent.end()) {
