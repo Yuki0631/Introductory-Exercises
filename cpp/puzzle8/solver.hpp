@@ -46,7 +46,7 @@ A_star_path(const puzzle8::Puzzle& start,
         }
     };
 
-    if (start.tiles == goal.tiles) { // もし開始状態が目標状態なら
+    if (start == goal) { // もし開始状態が目標状態なら
         auto t1 = std::chrono::steady_clock::now();
         return SearchResult{
             std::make_optional(std::vector<Puzzle::Move>{}),
@@ -78,10 +78,10 @@ A_star_path(const puzzle8::Puzzle& start,
         if (itg != gscore.end() && cur.g > itg->second) continue;
 
         // ゴール条件を満たした場合
-        if (cur.s.tiles == goal.tiles) {
+        if (cur.s == goal) {
             std::vector<Puzzle::Move> path;
             Puzzle x = cur.s;
-            while (!(x.tiles == start.tiles)) {
+            while (!(x == start)) {
                 auto itp = parent.find(x);
                 if (itp == parent.end()) break; // ありえないが念のため
                 path.push_back(itp->second.second);
@@ -105,10 +105,8 @@ A_star_path(const puzzle8::Puzzle& start,
         // ノードの拡張 (Expand)
         for (auto m : MOVES) {
             if (!Puzzle::can_move(cur.s.zero_pos, m)) continue; // 移動できない場合はスキップ
-            auto nxt_opt = cur.s.moved(m);
-            if (!nxt_opt) continue; // 移動後の状態が無効の場合はスキップ
-            Puzzle nxt = *nxt_opt;
-
+            Puzzle nxt = cur.s;
+            nxt.move_inplace(m);
             int tentative_g = cur.g + 1; // 暫定的な g 値
 
             // 即時重複検出
@@ -149,6 +147,25 @@ inline std::string path_to_string(const std::vector<puzzle8::Puzzle::Move>& path
         oss << move_to_string(move) << " ";
     }
     return oss.str();
+}
+
+// 経路が正しいか判定する関数
+inline bool validate_path(const puzzle8::Puzzle& start,
+                          const puzzle8::Puzzle& goal,
+                          const std::vector<puzzle8::Puzzle::Move>& path,
+                          bool check_invariants_each_step = true) {
+    using puzzle8::Puzzle;
+    Puzzle s = start;
+    for (auto mv : path) { // 初期状態から経路上の手を順に適用していく
+        if (!Puzzle::can_move(s.zero_pos, mv)) {
+            return false;
+        }
+        s.move_inplace(mv);
+        if (check_invariants_each_step && !s.validate_invariants(true)) {
+            return false;
+        }
+    }
+    return s == goal;
 }
 
 } // namespace solver

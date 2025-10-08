@@ -5,37 +5,42 @@
 #include "puzzle.hpp"
 
 namespace puzzle8 {
+
 inline Puzzle generator(
-    int n, // スライド操作の回数
-    std::mt19937& rng, // メルセンヌツイスター (32bit) 乱数生成器
-    bool avoid_backtrack = true // 直前の手を除外するか (デフォルト値は true)
+    int n,
+    std::mt19937& rng,
+    bool avoid_backtrack = true
 ) {
-    Puzzle cur = Puzzle::goal(); // 現在の手
+    Puzzle cur = Puzzle::goal();
     if (n <= 0) return cur;
 
-    std::optional<Puzzle::Move> last = std::nullopt; // 直前の手
+    // 直前の逆戻りを避ける optional
+    std::optional<Puzzle::Move> last = std::nullopt;
 
-    for (int step = 0; step < n; ++step) {
-        // 合法手を列挙する
-        std::vector<std::pair<Puzzle, Puzzle::Move>> neigh = cur.neighbors();
-
-        // 直前手の反転を除外 (avoid_backtrack が true の場合)
-        if (avoid_backtrack && last.has_value()) {
-            const Puzzle::Move ban = cur.inverse(*last);
-            std::vector<std::pair<Puzzle, Puzzle::Move>> filtered; // 直前手の反転を除外した手
-            filtered.reserve(neigh.size());
-            for (auto& pr : neigh) {
-                if (pr.second != ban) filtered.push_back(std::move(pr));
+    for (int i = 0; i < n; ++i) {
+        std::vector<Puzzle::Move> moves;
+        moves.reserve(4);
+        for (Puzzle::Move m : {Puzzle::Move::Up, Puzzle::Move::Down, Puzzle::Move::Left, Puzzle::Move::Right}) {
+            if (!Puzzle::can_move(cur.zero_pos, m)) {
+                continue;
             }
-            if (!filtered.empty()) neigh.swap(filtered); // 全部が反転手ならそのまま
+            if (avoid_backtrack && last && m == Puzzle::inverse(*last)) {
+                continue;
+            }
+            moves.push_back(m);
         }
-
-        // ランダムに 1 手選ぶ
-        std::uniform_int_distribution<std::size_t> dist(0, neigh.size() - 1); // 一様分布
-        auto& pick = neigh[dist(rng)];
-
-        last = pick.second;
-        cur  = pick.first;
+        if (moves.empty()) {
+            // 逆戻り抑止で詰んだ場合は許可する
+            for (Puzzle::Move m : {Puzzle::Move::Up, Puzzle::Move::Down, Puzzle::Move::Left, Puzzle::Move::Right}) {
+                if (Puzzle::can_move(cur.zero_pos, m)) {
+                    moves.push_back(m);
+                }
+            }
+        }
+        std::uniform_int_distribution<int> dist(0, (int)moves.size()-1);
+        auto m = moves[dist(rng)];
+        cur.move_inplace(m);
+        last = m;
     }
     return cur;
 }

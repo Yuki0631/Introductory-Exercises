@@ -8,77 +8,144 @@
 #include <iomanip>
 #include <utility>
 #include <functional>
+#include <cstdlib>
 
 namespace puzzle8 {
 
-struct Puzzle {
-    std::array<uint8_t, 9> tiles{}; // タイルの配置
-    uint8_t zero_pos = 0; // 空白の位置のインデックス
+// 3x3 の座標と一次元indexの相互変換関数
+static inline int row(int idx) {
+    return idx / 3;
+}
+static inline int col(int idx) {
+    return idx % 3;
+}
+static inline int idx(int r, int c) {
+    return r * 3 + c;
+}
 
+// 4bitづつインデックスの値を書き込む (先頭4bitは0番目のタイルの値などのようにする)
+static inline uint8_t get_nibble(uint64_t x, int i) {
+    return static_cast<uint8_t>((x >> (i * 4)) & 0xF);
+}
+static inline void set_nibble(uint64_t &x, int i, uint8_t v) {
+    const uint64_t mask = ~(0xFULL << (i * 4));
+    x = (x & mask) | (static_cast<uint64_t>(v & 0xF) << (i * 4));
+}
+
+struct Puzzle {
+    uint64_t board = 0; // 4bit×9=36bit
+    uint8_t  zero_pos = 0; // 空白の位置
+    uint8_t  hman = 0; // マンハッタン距離
+
+    enum class Move : uint8_t { Up=0, Down=1, Left=2, Right=3 };
+
+    // 目標状態
     static Puzzle goal() {
         Puzzle p;
-        p.tiles = {1,2,3,4,5,6,7,8,0};
+        for (int i = 0; i < 8; ++i) {
+            set_nibble(p.board, i, static_cast<uint8_t>(i+1));
+        }
+        set_nibble(p.board, 8, 0);
         p.zero_pos = 8;
+        p.recompute_manhattan();
         return p;
     }
 
     // コンストラクタ 
-    explicit Puzzle(const std::array<uint8_t,9>& t) : tiles(t) {
-        for (uint8_t i = 0; i < 9; ++i) if (tiles[i] == 0) { zero_pos = i; break; }
+    explicit Puzzle(const std::array<uint8_t,9>& t) {
+        for (int i = 0; i < 9; ++i) {
+            set_nibble(board, i, t[i]);
+            if (t[i] == 0) {
+                zero_pos = static_cast<uint8_t>(i);
+            }
+        }
+        recompute_manhattan();
     }
-    Puzzle() = default; // デフォルトコンストラクタ
+    Puzzle() = default;
 
-    bool operator==(const Puzzle& other) const noexcept { return tiles == other.tiles; } // 等価比較の演算オペレータ
-    bool operator!=(const Puzzle& other) const noexcept { return !(*this == other); } // 非等価比較の演算オペレータ
+    bool operator==(const Puzzle& other) const noexcept {
+        return board == other.board;
+    }
+    bool operator!=(const Puzzle& other) const noexcept {
+        return !(*this == other);
+    }
+    bool operator<(const Puzzle& other) const noexcept  {
+        return board < other.board;
+    }
 
-    // デバッグ用の、盤面を表示する関数
+    // デバッグ表示
     std::string to_string() const {
         std::ostringstream oss;
         for (int i = 0; i < 9; ++i) {
-            if (i && i % 3 == 0) oss << '\n'; // iが0以外の3の倍数の時
-            if (tiles[i] == 0) oss << " _";
-            else {
-                oss << ' ' << int(tiles[i]);
-            }
+            if (i && i % 3 == 0) oss << '\n';
+            uint8_t v = get_nibble(board, i);
+            if (v == 0) oss << " _";
+            else oss << ' ' << int(v);
         }
         return oss.str();
     }
 
-    // 1次元配列と2次元配列のインデックス交換を行うインライン関数群
-    static inline int row(int idx) { return idx / 3; } 
-    static inline int col(int idx) { return idx % 3; }
-    static inline int idx(int r, int c) { return r*3 + c; }
-
-    // 空白を上下左右へ動かす際に必要な列挙型と関数
-    enum class Move : uint8_t { Up=0, Down=1, Left=2, Right=3 };
+    // 初期化、検証用にもう一度マンハッタン距離を計算する関数
+    inline void recompute_manhattan() {
+        uint8_t sum = 0;
+        for (int i = 0; i < 9; ++i) {
+            uint8_t t = get_nibble(board, i);
+            if (t == 0) {
+                zero_pos = static_cast<uint8_t>(i);
+                continue;
+            }
+            int tr = (t - 1) / 3, tc = (t - 1) % 3;
+            sum += static_cast<uint8_t>(std::abs(tr - row(i)) + std::abs(tc - col(i)));
+        }
+        hman = sum;
+    }
 
     // 空白を動かせるか判定する関数
-    static inline bool can_move(int zero, Move m) { // zero: 空白の位置
+    static inline bool can_move(int zero, Move m) {
         int r = row(zero), c = col(zero);
         switch (m) {
-            case Move::Up:    return r > 0;
-            case Move::Down:  return r < 2;
-            case Move::Left:  return c > 0;
+            case Move::Up: return r > 0;
+            case Move::Down: return r < 2;
+            case Move::Left: return c > 0;
             case Move::Right: return c < 2;
         }
         return false;
     }
 
-    // 空白を動かして新しい盤面を返す関数
-    std::optional<Puzzle> moved(Move m) const {
-        if (!can_move(zero_pos, m)) return std::nullopt;
+    // インプレース移動と差分マンハッタンを計算する関数
+    inline void move_inplace(Move m) {
         int zr = row(zero_pos), zc = col(zero_pos);
         int nr = zr, nc = zc;
         switch (m) {
-            case Move::Up:    --nr; break;
-            case Move::Down:  ++nr; break;
-            case Move::Left:  --nc; break;
+            case Move::Up: --nr; break;
+            case Move::Down: ++nr; break;
+            case Move::Left: --nc; break;
             case Move::Right: ++nc; break;
         }
-        int ni = idx(nr,nc); // 入れ替え先
+        int to = idx(nr, nc);
+        uint8_t tile = get_nibble(board, to);
+        // 差分更新
+        if (tile != 0) {
+            int old_r = row(to), old_c = col(to);
+            int new_r = row(zero_pos), new_c = col(zero_pos);
+            int tr = (tile - 1) / 3, tc = (tile - 1) % 3;
+            uint8_t oldd = static_cast<uint8_t>(std::abs(tr - old_r) + std::abs(tc - old_c));
+            uint8_t newd = static_cast<uint8_t>(std::abs(tr - new_r) + std::abs(tc - new_c));
+            hman = static_cast<uint8_t>(hman - oldd + newd);
+        }
+        // tile と 0 をスワップする
+        set_nibble(board, to, 0);
+        set_nibble(board, zero_pos, tile);
+        zero_pos = static_cast<uint8_t>(to);
+    }
+
+    // 新しい盤面を返す関数
+    std::optional<Puzzle> moved(Move m) const {
+        if (!can_move(zero_pos, m)) {
+            return std::nullopt;
+        }
         Puzzle nxt = *this;
-        std::swap(nxt.tiles[zero_pos], nxt.tiles[ni]);
-        nxt.zero_pos = static_cast<uint8_t>(ni);
+        nxt.move_inplace(m);
         return nxt;
     }
 
@@ -87,35 +154,78 @@ struct Puzzle {
         std::vector<std::pair<Puzzle, Move>> res;
         res.reserve(4);
         for (Move m : {Move::Up, Move::Down, Move::Left, Move::Right}) {
-            if (auto next = moved(m)) res.emplace_back(*next, m);
+            if (auto next = moved(m)) {
+                res.emplace_back(*next, m);
+            }
         }
         return res;
     }
 
-    // スライド操作の逆操作を返す関数
-    inline Puzzle::Move inverse(Puzzle::Move m) noexcept {
-    switch (m) {
-        case Puzzle::Move::Up:    return Puzzle::Move::Down;
-        case Puzzle::Move::Down:  return Puzzle::Move::Up;
-        case Puzzle::Move::Left:  return Puzzle::Move::Right;
-        case Puzzle::Move::Right: return Puzzle::Move::Left;
+    // 逆操作
+    static inline Move inverse(Move m) noexcept {
+        switch (m) {
+            case Move::Up: return Move::Down;
+            case Move::Down: return Move::Up;
+            case Move::Left: return Move::Right;
+            case Move::Right: return Move::Left;
+        }
+        return Move::Up;
     }
-    // 理論的には呼ばれないが、デフォルトの戻り値を設定しておく
-    return Puzzle::Move::Up;
+
+    // 0..8 がちょうど一回ずつ現れるか確認する関数
+    inline bool has_valid_tiles() const {
+        std::array<int, 9> cnt{};
+        cnt.fill(0);
+        for (int i = 0; i < 9; ++i) {
+            uint8_t v = get_nibble(board, i);
+            if (v > 8) {
+                return false;
+            }
+            cnt[v] += 1;
+        }
+        for (int v : cnt) {
+            if (v != 1) {
+                return false;
+            }
+        }
+        return true;
     }
-    
+
+    // zero_pos と hman が実データと一致しているか判定する関数
+    inline bool validate_invariants(bool check_h=true) const {
+        // zero_pos
+        int z = -1;
+        for (int i = 0; i < 9; ++i) {
+            if (get_nibble(board, i) == 0) {
+                z = i;
+                break;
+            }
+        }
+        if (z < 0 || static_cast<int>(zero_pos) != z) {
+            return false;
+        }
+        if (!check_h) {
+            return true;
+        }
+        // hman
+        uint8_t sum = 0;
+        for (int i = 0; i < 9; ++i) {
+            uint8_t t = get_nibble(board, i);
+            if (t == 0) {
+                continue;
+            }
+            int r = row(i), c = col(i);
+            int tr = (t - 1) / 3, tc = (t - 1) % 3;
+            sum += static_cast<uint8_t>(std::abs(tr - r) + std::abs(tc - c));
+        }
+        return sum == hman;
+    }
 };
 
-// ハッシュ（unordered_* で使う用）
+// unordered_* で使う用のハッシュ
 struct PuzzleHash {
     std::size_t operator()(const Puzzle& p) const noexcept {
-        // シンプルかつ高速なローリングハッシュ
-        std::size_t h = 1469598103934665603ull; // FNV1-a の初期値
-        for (auto v : p.tiles) {
-            h ^= static_cast<std::size_t>(v + 1); // xor演算
-            h *= 1099511628211ull; // FNVの素数を掛け合わせる
-        }
-        return h;
+        return std::hash<uint64_t>{}(p.board);
     }
 };
 
